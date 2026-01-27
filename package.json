@@ -1,0 +1,23 @@
+{
+  "name": "listening-ear",
+  "version": "1.0.0",
+  "description": "Multi-source audio recorder for meeting transcription - captures microphone and system audio separately",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [
+    "audio-recorder",
+    "transcription",
+    "chromebook",
+    "meeting-recorder",
+    "web-audio"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}

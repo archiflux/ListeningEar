@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Record meetings with separate audio tracks for your voice and system audio - perfect for transcription">
+  <meta name="theme-color" content="#1a1a2e">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <title>ListeningEar - Dual Audio Recorder</title>
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>🎧 ListeningEar</h1>
+      <p class="subtitle">Record meetings with separate audio tracks for transcription</p>
+    </header>
+
+    <main>
+      <!-- Source Selection Section -->
+      <section class="source-section">
+        <div class="source-card" id="mic-card">
+          <div class="source-header">
+            <span class="source-icon">🎤</span>
+            <h2>Your Microphone</h2>
+          </div>
+          <p class="source-description">Record your voice separately</p>
+
+          <div class="source-controls">
+            <label for="mic-select">Select Input Device:</label>
+            <select id="mic-select" disabled>
+              <option value="">Click "Setup Microphone" first</option>
+            </select>
+            <button id="setup-mic-btn" class="btn btn-secondary">
+              Setup Microphone
+            </button>
+          </div>
+
+          <div class="audio-meter" id="mic-meter">
+            <div class="meter-bar" id="mic-meter-bar"></div>
+            <span class="meter-label">Audio Level</span>
+          </div>
+
+          <div class="source-status" id="mic-status">
+            <span class="status-dot"></span>
+            <span class="status-text">Not connected</span>
+          </div>
+        </div>
+
+        <div class="source-card" id="system-card">
+          <div class="source-header">
+            <span class="source-icon">🖥️</span>
+            <h2>System/Tab Audio</h2>
+          </div>
+          <p class="source-description">Capture audio from meetings, videos, etc.</p>
+
+          <div class="source-controls">
+            <p class="info-text">
+              Click below to select a browser tab or screen to capture audio from.
+              <strong>Tip:</strong> Select "Chrome Tab" and check "Share tab audio" for best results.
+            </p>
+            <button id="setup-system-btn" class="btn btn-secondary">
+              Capture Tab/Screen Audio
+            </button>
+          </div>
+
+          <div class="audio-meter" id="system-meter">
+            <div class="meter-bar" id="system-meter-bar"></div>
+            <span class="meter-label">Audio Level</span>
+          </div>
+
+          <div class="source-status" id="system-status">
+            <span class="status-dot"></span>
+            <span class="status-text">Not connected</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Recording Controls -->
+      <section class="recording-section">
+        <div class="recording-controls">
+          <button id="record-btn" class="btn btn-record" disabled>
+            <span class="record-icon">⏺️</span>
+            <span class="record-text">Start Recording</span>
+          </button>
+
+          <div class="recording-timer" id="recording-timer">
+            <span class="timer-dot"></span>
+            <span class="timer-text">00:00:00</span>
+          </div>
+        </div>
+
+        <div class="recording-options">
+          <label class="checkbox-label">
+            <input type="checkbox" id="record-mic" checked>
+            <span>Record Microphone</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="record-system" checked>
+            <span>Record System Audio</span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Recordings List -->
+      <section class="recordings-section" id="recordings-section">
+        <h2>📁 Recordings</h2>
+        <p class="section-description">Your recorded audio files will appear here. Download them separately for transcription.</p>
+
+        <div class="recordings-list" id="recordings-list">
+          <div class="empty-state">
+            <p>No recordings yet. Set up your audio sources and start recording!</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Help Section -->
+      <section class="help-section">
+        <details>
+          <summary>📖 How to Use</summary>
+          <div class="help-content">
+            <ol>
+              <li><strong>Setup Microphone:</strong> Click "Setup Microphone" and grant permission. Select your preferred input device.</li>
+              <li><strong>Capture Tab Audio:</strong> Click "Capture Tab/Screen Audio". Select the tab with your meeting (Teams, Zoom, etc.) and make sure to check "Share tab audio".</li>
+              <li><strong>Start Recording:</strong> Once both sources show green status, click "Start Recording".</li>
+              <li><strong>Stop & Download:</strong> Click "Stop Recording" when done. Download both audio files separately.</li>
+              <li><strong>Transcribe:</strong> Use FasterWhisperXXL or similar tool with the separate audio files for better transcription accuracy.</li>
+            </ol>
+
+            <h4>Tips for Best Results:</h4>
+            <ul>
+              <li>Use Chrome or Edge browser for best compatibility</li>
+              <li>When capturing tab audio, select "Chrome Tab" option (not window/screen)</li>
+              <li>Always check the "Share tab audio" checkbox when prompted</li>
+              <li>Keep this tab open in the background while recording</li>
+              <li>Use headphones to prevent echo between your mic and speakers</li>
+            </ul>
+          </div>
+        </details>
+      </section>
+    </main>
+
+    <footer>
+      <p>ListeningEar - Built for easy meeting transcription</p>
+    </footer>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
