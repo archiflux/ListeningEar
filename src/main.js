@@ -453,14 +453,15 @@ class ListeningEar {
   }
 
   finalizeRecording() {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const now = new Date();
+    const timestamp = this.formatTimestampForFilename(now);
     const duration = this.formatTime(Date.now() - this.recordingStartTime);
     const mimeType = this.getSupportedMimeType();
     const extension = mimeType.includes('webm') ? 'webm' : 'ogg';
 
     const recording = {
       id: Date.now(),
-      timestamp: new Date().toLocaleString(),
+      timestamp: now.toLocaleString(),
       duration: duration,
       files: []
     };
@@ -469,7 +470,7 @@ class ListeningEar {
     if (this.micChunks.length > 0) {
       const micBlob = new Blob(this.micChunks, { type: mimeType });
       recording.files.push({
-        name: `microphone_${timestamp}.${extension}`,
+        name: `${timestamp} MicrophoneRecording.${extension}`,
         blob: micBlob,
         type: 'microphone',
         size: this.formatFileSize(micBlob.size)
@@ -480,7 +481,7 @@ class ListeningEar {
     if (this.systemChunks.length > 0) {
       const systemBlob = new Blob(this.systemChunks, { type: mimeType });
       recording.files.push({
-        name: `system_audio_${timestamp}.${extension}`,
+        name: `${timestamp} SystemAudioRecording.${extension}`,
         blob: systemBlob,
         type: 'system',
         size: this.formatFileSize(systemBlob.size)
@@ -540,6 +541,16 @@ class ListeningEar {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  formatTimestampForFilename(date) {
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+
+    return `${year}-${month}-${day} ${hours}-${minutes}`;
   }
 
   renderRecordings() {
