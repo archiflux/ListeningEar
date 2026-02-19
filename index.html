@@ -105,8 +105,16 @@
 
       <!-- Recordings List -->
       <section class="recordings-section" id="recordings-section">
-        <h2>📁 Recordings</h2>
-        <p class="section-description">Your recorded audio files will appear here. Download them separately for transcription.</p>
+        <div class="recordings-header">
+          <div>
+            <h2>📁 Recordings</h2>
+            <p class="section-description">Your recorded audio files will appear here. Download them separately for transcription.</p>
+          </div>
+          <button id="import-audio-btn" class="btn btn-import">
+            📂 Import Audio File
+          </button>
+          <input type="file" id="import-audio-input" accept="audio/*,.mp3,.wav,.webm,.ogg,.m4a,.flac,.aac" hidden>
+        </div>
 
         <div class="recordings-list" id="recordings-list">
           <div class="empty-state">

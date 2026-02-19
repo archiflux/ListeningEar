@@ -94,12 +94,14 @@ export class Transcriber {
 
     const micFile = recording.files.find((f) => f.type === 'microphone');
     const systemFile = recording.files.find((f) => f.type === 'system');
+    const importedFile = recording.files.find((f) => f.type === 'imported');
 
     // Derive a timestamp prefix from the first filename, e.g. "2026-02-12 14-23"
     const prefix = recording.files[0]?.name.match(/^\d{4}-\d{2}-\d{2} \d{2}-\d{2}/)?.[0] ?? 'recording';
 
     let micResult = null;
     let systemResult = null;
+    let importedResult = null;
 
     if (micFile) {
       const r = await this._transcribeBlob(micFile.blob, modelId, language, 'You');
@@ -111,8 +113,24 @@ export class Transcriber {
       systemResult = r.data;
     }
 
+    if (importedFile) {
+      const r = await this._transcribeBlob(importedFile.blob, modelId, language, 'Speaker');
+      importedResult = r.data;
+    }
+
     const srtFiles = [];
 
+    // For imported files, just generate a single SRT
+    if (importedResult) {
+      srtFiles.push({
+        name: `${prefix} Transcription.srt`,
+        content: generateSingleSRT(importedResult, 'Speaker'),
+        type: 'imported-srt',
+      });
+      return srtFiles;
+    }
+
+    // For recorded files, generate combined + individual SRTs
     if (micResult || systemResult) {
       srtFiles.push({
         name: `${prefix} Combined.srt`,

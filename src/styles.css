@@ -333,6 +333,20 @@ header h1 {
   box-shadow: var(--shadow);
 }
 
+.recordings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.recordings-header h2 {
+  font-size: 1.25rem;
+  margin-bottom: 0.25rem;
+}
+
 .recordings-section h2 {
   font-size: 1.25rem;
   margin-bottom: 0.5rem;
@@ -341,7 +355,26 @@ header h1 {
 .section-description {
   color: var(--text-secondary);
   font-size: 0.9rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0;
+}
+
+.btn-import {
+  background: linear-gradient(135deg, #6c63ff, #4ecdc4);
+  color: white;
+  border: none;
+  font-size: 0.85rem;
+  padding: 0.6rem 1rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn-import:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.recording-item.imported {
+  border-left: 3px solid #6c63ff;
 }
 
 .recordings-list {

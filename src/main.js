@@ -56,6 +56,8 @@ class ListeningEar {
       recordingTimer: document.getElementById('recording-timer'),
       timerText: document.querySelector('.timer-text'),
       recordingsList: document.getElementById('recordings-list'),
+      importBtn: document.getElementById('import-audio-btn'),
+      importInput: document.getElementById('import-audio-input'),
     };
 
     this.init();
@@ -68,6 +70,10 @@ class ListeningEar {
     this.elements.micSelect.addEventListener('change', (e) => this.changeMicDevice(e.target.value));
     this.elements.recordMicCheckbox.addEventListener('change', () => this.updateRecordButton());
     this.elements.recordSystemCheckbox.addEventListener('change', () => this.updateRecordButton());
+
+    // Import audio file
+    this.elements.importBtn.addEventListener('click', () => this.elements.importInput.click());
+    this.elements.importInput.addEventListener('change', (e) => this.handleImportFile(e));
 
     this.checkBrowserSupport();
     this.renderRecordings();
@@ -338,6 +344,41 @@ class ListeningEar {
     return 'audio/webm';
   }
 
+  // ─── Import audio file ────────────────────────────────────────────────────
+
+  handleImportFile(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Reset input so the same file can be imported again if needed
+    event.target.value = '';
+
+    const now = new Date();
+    const timestamp = this.formatTimestampForFilename(now);
+
+    // Get file extension or default to original
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'audio';
+
+    const recording = {
+      id: Date.now(),
+      timestamp: now.toLocaleString(),
+      duration: 'Imported',
+      imported: true,
+      files: [
+        {
+          name: `${timestamp} ImportedAudio.${ext}`,
+          blob: file,
+          type: 'imported',
+          size: this.formatFileSize(file.size),
+          originalName: file.name,
+        },
+      ],
+    };
+
+    this.recordings.unshift(recording);
+    this.renderRecordings();
+  }
+
   // ─── Timer ────────────────────────────────────────────────────────────────
 
   startTimer() {
@@ -391,10 +432,21 @@ class ListeningEar {
   }
 
   _recordingItemHTML(recording) {
+    const isImported = recording.imported;
+    const title = isImported ? '📂 Imported Audio' : '🎙️ Recording';
+
+    const fileIcon = (type) => ({ microphone: '🎤', system: '🖥️', imported: '📁' }[type] ?? '🎵');
+    const fileLabel = (f) => {
+      if (f.type === 'microphone') return 'Your Voice';
+      if (f.type === 'system') return 'Meeting Audio';
+      if (f.type === 'imported') return f.originalName || 'Imported Audio';
+      return 'Audio';
+    };
+
     return `
-      <div class="recording-item" data-id="${recording.id}">
+      <div class="recording-item ${isImported ? 'imported' : ''}" data-id="${recording.id}">
         <div class="recording-item-header">
-          <span class="recording-item-title">🎙️ Recording</span>
+          <span class="recording-item-title">${title}</span>
           <span class="recording-item-time">${recording.timestamp} • ${recording.duration}</span>
         </div>
 
@@ -402,9 +454,9 @@ class ListeningEar {
           ${recording.files.map((f) => `
             <a href="#" class="file-download" data-action="download-audio"
                data-recording-id="${recording.id}" data-file-name="${f.name}">
-              <span class="file-icon">${f.type === 'microphone' ? '🎤' : '🖥️'}</span>
+              <span class="file-icon">${fileIcon(f.type)}</span>
               <span class="file-info">
-                <span class="file-name">${f.type === 'microphone' ? 'Your Voice' : 'Meeting Audio'}</span>
+                <span class="file-name">${fileLabel(f)}</span>
                 <span class="file-size">${f.size}</span>
               </span>
               <span class="download-icon">⬇️</span>
@@ -503,8 +555,8 @@ class ListeningEar {
 
     // ── Done ──
     if (state.phase === 'done') {
-      const icon  = { combined: '📋', 'mic-srt': '🎤', 'system-srt': '🖥️' };
-      const label = { combined: 'Combined SRT', 'mic-srt': 'Your Voice SRT', 'system-srt': 'Meeting Audio SRT' };
+      const icon  = { combined: '📋', 'mic-srt': '🎤', 'system-srt': '🖥️', 'imported-srt': '📄' };
+      const label = { combined: 'Combined SRT', 'mic-srt': 'Your Voice SRT', 'system-srt': 'Meeting Audio SRT', 'imported-srt': 'Transcription SRT' };
       return `
         <div class="transcription-done">
           <span class="done-label">✅ Transcription complete</span>
