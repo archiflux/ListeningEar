@@ -17,6 +17,9 @@
   ],
   "author": "",
   "license": "MIT",
+  "dependencies": {
+    "@huggingface/transformers": "^3.3.3"
+  },
   "devDependencies": {
     "vite": "^5.0.0"
   }

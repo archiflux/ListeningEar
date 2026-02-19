@@ -5,10 +5,22 @@ export default defineConfig({
   base: process.env.GITHUB_ACTIONS ? '/ListeningEar/' : './',
   build: {
     outDir: 'dist',
-    assetsDir: 'assets'
+    assetsDir: 'assets',
+    target: 'esnext',  // Required for top-level await used by transformers.js
+  },
+  worker: {
+    format: 'es',  // ES module workers needed for transformers.js imports
+  },
+  optimizeDeps: {
+    exclude: ['@huggingface/transformers'],  // Don't pre-bundle — uses WASM
   },
   server: {
     port: 3000,
-    open: true
-  }
+    open: true,
+    headers: {
+      // Enables SharedArrayBuffer for multi-threaded WASM (dev only)
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+  },
 });

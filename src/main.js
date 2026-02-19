@@ -3,6 +3,8 @@
  * Records microphone and system audio as separate tracks for transcription
  */
 
+import { Transcriber } from './transcriber.js';
+
 class ListeningEar {
   constructor() {
     // Audio streams
@@ -29,6 +31,14 @@ class ListeningEar {
     // Recordings storage
     this.recordings = [];
 
+    // Transcription
+    this.transcriber = new Transcriber({
+      onProgress: (p) => this._onTranscriptionProgress(p),
+      onError: (msg) => this._onTranscriptionError(msg),
+    });
+    this.transcriptionStates = new Map(); // recordingId -> state object
+    this.activeTranscriptionId = null;
+
     // DOM elements
     this.elements = {
       micSelect: document.getElementById('mic-select'),
@@ -45,29 +55,29 @@ class ListeningEar {
       recordSystemCheckbox: document.getElementById('record-system'),
       recordingTimer: document.getElementById('recording-timer'),
       timerText: document.querySelector('.timer-text'),
-      recordingsList: document.getElementById('recordings-list')
+      recordingsList: document.getElementById('recordings-list'),
     };
 
     this.init();
   }
 
   init() {
-    // Bind event listeners
     this.elements.setupMicBtn.addEventListener('click', () => this.setupMicrophone());
     this.elements.setupSystemBtn.addEventListener('click', () => this.setupSystemAudio());
     this.elements.recordBtn.addEventListener('click', () => this.toggleRecording());
     this.elements.micSelect.addEventListener('change', (e) => this.changeMicDevice(e.target.value));
+    this.elements.recordMicCheckbox.addEventListener('change', () => this.updateRecordButton());
+    this.elements.recordSystemCheckbox.addEventListener('change', () => this.updateRecordButton());
 
-    // Check for browser support
     this.checkBrowserSupport();
-
-    // Load any saved recordings from session
-    this.loadRecordings();
+    this.renderRecordings();
   }
 
+  // ─── Browser support ──────────────────────────────────────────────────────
+
   checkBrowserSupport() {
-    const hasGetUserMedia = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-    const hasGetDisplayMedia = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+    const hasGetUserMedia = !!(navigator.mediaDevices?.getUserMedia);
+    const hasGetDisplayMedia = !!(navigator.mediaDevices?.getDisplayMedia);
 
     if (!hasGetUserMedia) {
       this.updateStatus('mic', 'Browser not supported', true);
@@ -78,37 +88,22 @@ class ListeningEar {
       this.updateStatus('system', 'Browser not supported', true);
       this.elements.setupSystemBtn.disabled = true;
     }
-
-    if (!hasGetUserMedia && !hasGetDisplayMedia) {
-      alert('Your browser does not support the required audio APIs. Please use Chrome, Edge, or Firefox.');
-    }
   }
+
+  // ─── Microphone ───────────────────────────────────────────────────────────
 
   async setupMicrophone() {
     try {
       this.updateStatus('mic', 'Requesting permission...');
-
-      // Request microphone access
       this.micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
-
-      // Enumerate devices after getting permission
       await this.enumerateAudioDevices();
-
-      // Setup audio visualization
       this.setupMicVisualization();
-
       this.updateStatus('mic', 'Connected', false, true);
       this.elements.micCard.classList.add('active');
       this.elements.setupMicBtn.textContent = 'Reconnect';
-
       this.updateRecordButton();
-
     } catch (err) {
       console.error('Microphone setup error:', err);
       this.updateStatus('mic', `Error: ${err.message}`, true);
@@ -118,27 +113,19 @@ class ListeningEar {
   async enumerateAudioDevices() {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
-      const audioInputs = devices.filter(device => device.kind === 'audioinput');
-
+      const audioInputs = devices.filter((d) => d.kind === 'audioinput');
       this.elements.micSelect.innerHTML = '';
       this.elements.micSelect.disabled = false;
-
-      audioInputs.forEach((device, index) => {
+      audioInputs.forEach((device, i) => {
         const option = document.createElement('option');
         option.value = device.deviceId;
-        option.textContent = device.label || `Microphone ${index + 1}`;
-
-        // Select the current device if it matches
+        option.textContent = device.label || `Microphone ${i + 1}`;
         if (this.micStream) {
-          const currentTrack = this.micStream.getAudioTracks()[0];
-          if (currentTrack && currentTrack.getSettings().deviceId === device.deviceId) {
-            option.selected = true;
-          }
+          const track = this.micStream.getAudioTracks()[0];
+          if (track?.getSettings().deviceId === device.deviceId) option.selected = true;
         }
-
         this.elements.micSelect.appendChild(option);
       });
-
     } catch (err) {
       console.error('Device enumeration error:', err);
     }
@@ -146,28 +133,13 @@ class ListeningEar {
 
   async changeMicDevice(deviceId) {
     if (!deviceId) return;
-
     try {
-      // Stop current stream
-      if (this.micStream) {
-        this.micStream.getTracks().forEach(track => track.stop());
-      }
-
-      // Get new stream with selected device
+      this.micStream?.getTracks().forEach((t) => t.stop());
       this.micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          deviceId: { exact: deviceId },
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
+        audio: { deviceId: { exact: deviceId }, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
-
-      // Re-setup visualization
       this.setupMicVisualization();
-
       this.updateStatus('mic', 'Connected', false, true);
-
     } catch (err) {
       console.error('Device change error:', err);
       this.updateStatus('mic', `Error: ${err.message}`, true);
@@ -175,279 +147,153 @@ class ListeningEar {
   }
 
   setupMicVisualization() {
-    if (this.micAudioContext) {
-      this.micAudioContext.close();
-    }
-
+    this.micAudioContext?.close();
     this.micAudioContext = new (window.AudioContext || window.webkitAudioContext)();
     this.micAnalyser = this.micAudioContext.createAnalyser();
     this.micAnalyser.fftSize = 256;
-
-    const source = this.micAudioContext.createMediaStreamSource(this.micStream);
-    source.connect(this.micAnalyser);
-
-    this.visualizeMic();
+    this.micAudioContext.createMediaStreamSource(this.micStream).connect(this.micAnalyser);
+    this._animateMeter(this.micAnalyser, this.elements.micMeterBar, () => this.micStream?.active);
   }
 
-  visualizeMic() {
-    if (!this.micAnalyser) return;
-
-    const dataArray = new Uint8Array(this.micAnalyser.frequencyBinCount);
-
-    const update = () => {
-      this.micAnalyser.getByteFrequencyData(dataArray);
-      const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-      const level = Math.min(100, (average / 128) * 100);
-      this.elements.micMeterBar.style.width = `${level}%`;
-
-      if (this.micStream && this.micStream.active) {
-        requestAnimationFrame(update);
-      }
-    };
-
-    update();
-  }
+  // ─── System audio ─────────────────────────────────────────────────────────
 
   async setupSystemAudio() {
     try {
       this.updateStatus('system', 'Select a tab or screen...');
-
-      // Request display media with audio
-      // Chrome allows audio capture from tabs
       this.systemStream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          displaySurface: 'browser' // Prefer browser tab
-        },
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false
-        },
+        video: { displaySurface: 'browser' },
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
         preferCurrentTab: false,
         selfBrowserSurface: 'exclude',
-        systemAudio: 'include'
+        systemAudio: 'include',
       });
 
-      // Check if audio track is present
       const audioTracks = this.systemStream.getAudioTracks();
       if (audioTracks.length === 0) {
-        this.updateStatus('system', 'No audio captured - check "Share tab audio"', true);
-        // Stop the video track since we don't need it
-        this.systemStream.getVideoTracks().forEach(track => track.stop());
+        this.updateStatus('system', 'No audio captured — check "Share tab audio"', true);
+        this.systemStream.getVideoTracks().forEach((t) => t.stop());
         this.systemStream = null;
         return;
       }
 
-      // We only need audio, stop video track to save resources
-      this.systemStream.getVideoTracks().forEach(track => track.stop());
+      this.systemStream.getVideoTracks().forEach((t) => t.stop());
+      audioTracks[0].addEventListener('ended', () => this._onSystemStreamEnded());
 
-      // Setup visualization
       this.setupSystemVisualization();
-
-      // Handle when user stops sharing
-      audioTracks[0].addEventListener('ended', () => {
-        this.handleSystemStreamEnded();
-      });
-
       this.updateStatus('system', 'Capturing audio', false, true);
       this.elements.systemCard.classList.add('active');
       this.elements.setupSystemBtn.textContent = 'Change Source';
-
       this.updateRecordButton();
-
     } catch (err) {
-      console.error('System audio setup error:', err);
-      if (err.name === 'NotAllowedError') {
-        this.updateStatus('system', 'Permission denied', true);
-      } else {
-        this.updateStatus('system', `Error: ${err.message}`, true);
-      }
+      console.error('System audio error:', err);
+      this.updateStatus('system', err.name === 'NotAllowedError' ? 'Permission denied' : `Error: ${err.message}`, true);
     }
   }
 
-  handleSystemStreamEnded() {
+  _onSystemStreamEnded() {
     this.systemStream = null;
     this.updateStatus('system', 'Sharing stopped', true);
     this.elements.systemCard.classList.remove('active');
     this.elements.systemMeterBar.style.width = '0%';
     this.elements.setupSystemBtn.textContent = 'Capture Tab/Screen Audio';
-
-    if (this.isRecording) {
-      // Continue recording with just mic if available
-      this.elements.recordSystemCheckbox.checked = false;
-    }
-
+    if (this.isRecording) this.elements.recordSystemCheckbox.checked = false;
     this.updateRecordButton();
   }
 
   setupSystemVisualization() {
-    if (this.systemAudioContext) {
-      this.systemAudioContext.close();
-    }
-
+    this.systemAudioContext?.close();
     this.systemAudioContext = new (window.AudioContext || window.webkitAudioContext)();
     this.systemAnalyser = this.systemAudioContext.createAnalyser();
     this.systemAnalyser.fftSize = 256;
-
-    const source = this.systemAudioContext.createMediaStreamSource(this.systemStream);
-    source.connect(this.systemAnalyser);
-
-    this.visualizeSystem();
+    this.systemAudioContext.createMediaStreamSource(this.systemStream).connect(this.systemAnalyser);
+    this._animateMeter(this.systemAnalyser, this.elements.systemMeterBar, () => this.systemStream?.active);
   }
 
-  visualizeSystem() {
-    if (!this.systemAnalyser) return;
-
-    const dataArray = new Uint8Array(this.systemAnalyser.frequencyBinCount);
-
-    const update = () => {
-      this.systemAnalyser.getByteFrequencyData(dataArray);
-      const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-      const level = Math.min(100, (average / 128) * 100);
-      this.elements.systemMeterBar.style.width = `${level}%`;
-
-      if (this.systemStream && this.systemStream.active) {
-        requestAnimationFrame(update);
-      }
+  _animateMeter(analyser, barEl, isActiveFn) {
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      const avg = data.reduce((a, b) => a + b, 0) / data.length;
+      barEl.style.width = `${Math.min(100, (avg / 128) * 100)}%`;
+      if (isActiveFn()) requestAnimationFrame(tick);
     };
-
-    update();
+    tick();
   }
+
+  // ─── Status helpers ───────────────────────────────────────────────────────
 
   updateStatus(type, message, isError = false, isConnected = false) {
-    const statusEl = type === 'mic' ? this.elements.micStatus : this.elements.systemStatus;
-    const textEl = statusEl.querySelector('.status-text');
-
-    textEl.textContent = message;
-    statusEl.classList.remove('connected', 'error');
-
-    if (isConnected) {
-      statusEl.classList.add('connected');
-    } else if (isError) {
-      statusEl.classList.add('error');
-    }
+    const el = type === 'mic' ? this.elements.micStatus : this.elements.systemStatus;
+    el.querySelector('.status-text').textContent = message;
+    el.classList.remove('connected', 'error');
+    if (isConnected) el.classList.add('connected');
+    else if (isError) el.classList.add('error');
   }
 
   updateRecordButton() {
-    const hasMic = this.micStream && this.micStream.active;
-    const hasSystem = this.systemStream && this.systemStream.active;
+    const hasMic = this.micStream?.active;
+    const hasSystem = this.systemStream?.active;
     const wantMic = this.elements.recordMicCheckbox.checked;
     const wantSystem = this.elements.recordSystemCheckbox.checked;
-
-    // Enable button if at least one selected source is available
-    const canRecord = (wantMic && hasMic) || (wantSystem && hasSystem);
-    this.elements.recordBtn.disabled = !canRecord;
+    this.elements.recordBtn.disabled = !((wantMic && hasMic) || (wantSystem && hasSystem));
   }
 
+  // ─── Recording ────────────────────────────────────────────────────────────
+
   toggleRecording() {
-    if (this.isRecording) {
-      this.stopRecording();
-    } else {
-      this.startRecording();
-    }
+    this.isRecording ? this.stopRecording() : this.startRecording();
   }
 
   startRecording() {
     this.micChunks = [];
     this.systemChunks = [];
 
-    const wantMic = this.elements.recordMicCheckbox.checked;
-    const wantSystem = this.elements.recordSystemCheckbox.checked;
-
-    // Determine MIME type - prefer webm/opus for best compatibility
     const mimeType = this.getSupportedMimeType();
 
-    // Start mic recording
-    if (wantMic && this.micStream && this.micStream.active) {
-      this.micRecorder = new MediaRecorder(this.micStream, {
-        mimeType: mimeType,
-        audioBitsPerSecond: 128000
-      });
-
-      this.micRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          this.micChunks.push(e.data);
-        }
-      };
-
-      this.micRecorder.start(1000); // Collect data every second
+    if (this.elements.recordMicCheckbox.checked && this.micStream?.active) {
+      this.micRecorder = new MediaRecorder(this.micStream, { mimeType, audioBitsPerSecond: 128000 });
+      this.micRecorder.ondataavailable = (e) => { if (e.data.size > 0) this.micChunks.push(e.data); };
+      this.micRecorder.start(1000);
     }
 
-    // Start system audio recording
-    if (wantSystem && this.systemStream && this.systemStream.active) {
-      this.systemRecorder = new MediaRecorder(this.systemStream, {
-        mimeType: mimeType,
-        audioBitsPerSecond: 128000
-      });
-
-      this.systemRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          this.systemChunks.push(e.data);
-        }
-      };
-
+    if (this.elements.recordSystemCheckbox.checked && this.systemStream?.active) {
+      this.systemRecorder = new MediaRecorder(this.systemStream, { mimeType, audioBitsPerSecond: 128000 });
+      this.systemRecorder.ondataavailable = (e) => { if (e.data.size > 0) this.systemChunks.push(e.data); };
       this.systemRecorder.start(1000);
     }
 
     this.isRecording = true;
     this.recordingStartTime = Date.now();
 
-    // Update UI
     this.elements.recordBtn.classList.add('recording');
     this.elements.recordBtn.querySelector('.record-icon').textContent = '⏹️';
     this.elements.recordBtn.querySelector('.record-text').textContent = 'Stop Recording';
     this.elements.recordingTimer.classList.add('active');
-
-    // Disable checkboxes during recording
     this.elements.recordMicCheckbox.disabled = true;
     this.elements.recordSystemCheckbox.disabled = true;
 
-    // Start timer
     this.startTimer();
   }
 
   stopRecording() {
     return new Promise((resolve) => {
-      let pendingRecorders = 0;
+      let pending = 0;
 
-      const checkComplete = () => {
-        pendingRecorders--;
-        if (pendingRecorders <= 0) {
-          this.finalizeRecording();
-          resolve();
-        }
+      const onStop = () => {
+        if (--pending <= 0) { this.finalizeRecording(); resolve(); }
       };
 
-      if (this.micRecorder && this.micRecorder.state !== 'inactive') {
-        pendingRecorders++;
-        this.micRecorder.onstop = checkComplete;
-        this.micRecorder.stop();
-      }
-
-      if (this.systemRecorder && this.systemRecorder.state !== 'inactive') {
-        pendingRecorders++;
-        this.systemRecorder.onstop = checkComplete;
-        this.systemRecorder.stop();
-      }
-
-      if (pendingRecorders === 0) {
-        this.finalizeRecording();
-        resolve();
-      }
+      if (this.micRecorder?.state !== 'inactive') { pending++; this.micRecorder.onstop = onStop; this.micRecorder.stop(); }
+      if (this.systemRecorder?.state !== 'inactive') { pending++; this.systemRecorder.onstop = onStop; this.systemRecorder.stop(); }
+      if (pending === 0) { this.finalizeRecording(); resolve(); }
 
       this.isRecording = false;
-
-      // Update UI
       this.elements.recordBtn.classList.remove('recording');
       this.elements.recordBtn.querySelector('.record-icon').textContent = '⏺️';
       this.elements.recordBtn.querySelector('.record-text').textContent = 'Start Recording';
       this.elements.recordingTimer.classList.remove('active');
-
-      // Re-enable checkboxes
       this.elements.recordMicCheckbox.disabled = false;
       this.elements.recordSystemCheckbox.disabled = false;
-
-      // Stop timer
       this.stopTimer();
     });
   }
@@ -457,35 +303,18 @@ class ListeningEar {
     const timestamp = this.formatTimestampForFilename(now);
     const duration = this.formatTime(Date.now() - this.recordingStartTime);
     const mimeType = this.getSupportedMimeType();
-    const extension = mimeType.includes('webm') ? 'webm' : 'ogg';
+    const ext = mimeType.includes('webm') ? 'webm' : 'ogg';
 
-    const recording = {
-      id: Date.now(),
-      timestamp: now.toLocaleString(),
-      duration: duration,
-      files: []
-    };
+    const recording = { id: Date.now(), timestamp: now.toLocaleString(), duration, files: [] };
 
-    // Create mic audio blob
     if (this.micChunks.length > 0) {
-      const micBlob = new Blob(this.micChunks, { type: mimeType });
-      recording.files.push({
-        name: `${timestamp} MicrophoneRecording.${extension}`,
-        blob: micBlob,
-        type: 'microphone',
-        size: this.formatFileSize(micBlob.size)
-      });
+      const blob = new Blob(this.micChunks, { type: mimeType });
+      recording.files.push({ name: `${timestamp} MicrophoneRecording.${ext}`, blob, type: 'microphone', size: this.formatFileSize(blob.size) });
     }
 
-    // Create system audio blob
     if (this.systemChunks.length > 0) {
-      const systemBlob = new Blob(this.systemChunks, { type: mimeType });
-      recording.files.push({
-        name: `${timestamp} SystemAudioRecording.${extension}`,
-        blob: systemBlob,
-        type: 'system',
-        size: this.formatFileSize(systemBlob.size)
-      });
+      const blob = new Blob(this.systemChunks, { type: mimeType });
+      recording.files.push({ name: `${timestamp} SystemAudioRecording.${ext}`, blob, type: 'system', size: this.formatFileSize(blob.size) });
     }
 
     if (recording.files.length > 0) {
@@ -495,45 +324,32 @@ class ListeningEar {
   }
 
   getSupportedMimeType() {
-    const types = [
-      'audio/webm;codecs=opus',
-      'audio/webm',
-      'audio/ogg;codecs=opus',
-      'audio/ogg'
-    ];
-
-    for (const type of types) {
-      if (MediaRecorder.isTypeSupported(type)) {
-        return type;
-      }
+    for (const t of ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg']) {
+      if (MediaRecorder.isTypeSupported(t)) return t;
     }
-
-    return 'audio/webm'; // Fallback
+    return 'audio/webm';
   }
+
+  // ─── Timer ────────────────────────────────────────────────────────────────
 
   startTimer() {
     this.timerInterval = setInterval(() => {
-      const elapsed = Date.now() - this.recordingStartTime;
-      this.elements.timerText.textContent = this.formatTime(elapsed);
+      this.elements.timerText.textContent = this.formatTime(Date.now() - this.recordingStartTime);
     }, 1000);
   }
 
   stopTimer() {
-    if (this.timerInterval) {
-      clearInterval(this.timerInterval);
-      this.timerInterval = null;
-    }
+    clearInterval(this.timerInterval);
+    this.timerInterval = null;
     this.elements.timerText.textContent = '00:00:00';
   }
 
-  formatTime(ms) {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
+  // ─── Formatting helpers ───────────────────────────────────────────────────
 
-    return [hours, minutes, seconds]
-      .map(n => n.toString().padStart(2, '0'))
+  formatTime(ms) {
+    const s = Math.floor(ms / 1000);
+    return [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60]
+      .map((n) => n.toString().padStart(2, '0'))
       .join(':');
   }
 
@@ -544,95 +360,297 @@ class ListeningEar {
   }
 
   formatTimestampForFilename(date) {
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-
-    return `${year}-${month}-${day} ${hours}-${minutes}`;
+    const pad = (n) => n.toString().padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}-${pad(date.getMinutes())}`;
   }
+
+  // ─── Recordings rendering ─────────────────────────────────────────────────
 
   renderRecordings() {
     if (this.recordings.length === 0) {
       this.elements.recordingsList.innerHTML = `
         <div class="empty-state">
           <p>No recordings yet. Set up your audio sources and start recording!</p>
-        </div>
-      `;
+        </div>`;
       return;
     }
 
-    this.elements.recordingsList.innerHTML = this.recordings.map(recording => `
+    this.elements.recordingsList.innerHTML = this.recordings.map((r) => this._recordingItemHTML(r)).join('');
+    this.recordings.forEach((r) => {
+      const item = this.elements.recordingsList.querySelector(`.recording-item[data-id="${r.id}"]`);
+      if (item) this._bindRecordingEvents(item, r.id);
+    });
+  }
+
+  _recordingItemHTML(recording) {
+    return `
       <div class="recording-item" data-id="${recording.id}">
         <div class="recording-item-header">
-          <span class="recording-item-title">
-            🎙️ Recording
-          </span>
+          <span class="recording-item-title">🎙️ Recording</span>
           <span class="recording-item-time">${recording.timestamp} • ${recording.duration}</span>
         </div>
+
         <div class="recording-item-files">
-          ${recording.files.map(file => `
-            <a href="#" class="file-download" data-recording-id="${recording.id}" data-file-name="${file.name}">
-              <span class="file-icon">${file.type === 'microphone' ? '🎤' : '🖥️'}</span>
+          ${recording.files.map((f) => `
+            <a href="#" class="file-download" data-action="download-audio"
+               data-recording-id="${recording.id}" data-file-name="${f.name}">
+              <span class="file-icon">${f.type === 'microphone' ? '🎤' : '🖥️'}</span>
               <span class="file-info">
-                <span class="file-name">${file.type === 'microphone' ? 'Your Voice' : 'Meeting Audio'}</span>
-                <span class="file-size">${file.size}</span>
+                <span class="file-name">${f.type === 'microphone' ? 'Your Voice' : 'Meeting Audio'}</span>
+                <span class="file-size">${f.size}</span>
               </span>
               <span class="download-icon">⬇️</span>
             </a>
           `).join('')}
         </div>
-      </div>
-    `).join('');
 
-    // Add download event listeners
-    this.elements.recordingsList.querySelectorAll('.file-download').forEach(link => {
-      link.addEventListener('click', (e) => {
+        <div class="transcription-panel">
+          ${this._transcriptionPanelHTML(recording.id)}
+        </div>
+      </div>`;
+  }
+
+  _transcriptionPanelHTML(recordingId) {
+    const state = this.transcriptionStates.get(recordingId);
+
+    // ── Idle ──
+    if (!state) {
+      return `
+        <button class="btn btn-transcribe" data-action="show-settings" data-recording-id="${recordingId}">
+          ✨ Transcribe to SRT
+        </button>`;
+    }
+
+    // ── Settings ──
+    if (state.phase === 'settings') {
+      return `
+        <div class="transcription-settings">
+          <div class="settings-row">
+            <div class="setting-group">
+              <label>Whisper Model</label>
+              <select class="transcription-model">
+                <option value="Xenova/whisper-tiny">Tiny (39 MB) — Fastest</option>
+                <option value="Xenova/whisper-base" selected>Base (74 MB) — Balanced</option>
+                <option value="Xenova/whisper-small">Small (244 MB) — Best accuracy</option>
+              </select>
+            </div>
+            <div class="setting-group">
+              <label>Language</label>
+              <select class="transcription-language">
+                <option value="">Auto-detect</option>
+                <option value="en" selected>English</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="it">Italian</option>
+                <option value="pt">Portuguese</option>
+                <option value="nl">Dutch</option>
+                <option value="ja">Japanese</option>
+                <option value="zh">Chinese</option>
+              </select>
+            </div>
+          </div>
+          <p class="model-note">Model downloads once and is cached in your browser.</p>
+          <div class="settings-actions">
+            <button class="btn btn-start-transcription" data-action="start" data-recording-id="${recordingId}">
+              Start Transcription
+            </button>
+            <button class="btn btn-cancel" data-action="cancel" data-recording-id="${recordingId}">
+              Cancel
+            </button>
+          </div>
+        </div>`;
+    }
+
+    // ── Decoding audio ──
+    if (state.phase === 'decoding_audio') {
+      return `
+        <div class="transcription-progress">
+          <div class="progress-label">🔄 Decoding ${state.sourceLabel ? `[${state.sourceLabel}]` : ''} audio...</div>
+          <div class="progress-bar-track"><div class="progress-bar-fill indeterminate"></div></div>
+        </div>`;
+    }
+
+    // ── Downloading model ──
+    if (state.phase === 'loading_model') {
+      const pct = Math.round(state.progress ?? 0);
+      return `
+        <div class="transcription-progress">
+          <div class="progress-label">⬇️ Downloading model${state.file ? ` — ${state.file}` : ''}...</div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" style="width:${pct}%"></div>
+          </div>
+          <div class="progress-pct">${pct}%</div>
+        </div>`;
+    }
+
+    // ── Transcribing ──
+    if (state.phase === 'transcribing' || state.phase === 'starting') {
+      return `
+        <div class="transcription-progress">
+          <div class="progress-label">🎙️ Transcribing${state.sourceLabel ? ` [${state.sourceLabel}]` : ''}...</div>
+          <div class="progress-bar-track"><div class="progress-bar-fill indeterminate"></div></div>
+        </div>`;
+    }
+
+    // ── Done ──
+    if (state.phase === 'done') {
+      const icon  = { combined: '📋', 'mic-srt': '🎤', 'system-srt': '🖥️' };
+      const label = { combined: 'Combined SRT', 'mic-srt': 'Your Voice SRT', 'system-srt': 'Meeting Audio SRT' };
+      return `
+        <div class="transcription-done">
+          <span class="done-label">✅ Transcription complete</span>
+          <div class="srt-downloads">
+            ${state.srtFiles.map((f) => `
+              <a href="#" class="srt-download" data-action="download-srt"
+                 data-recording-id="${recordingId}" data-srt-name="${f.name}">
+                <span class="srt-icon">${icon[f.type] ?? '📄'}</span>
+                <span class="srt-info">
+                  <span class="srt-label">${label[f.type] ?? 'SRT'}</span>
+                  <span class="srt-filename">${f.name}</span>
+                </span>
+                <span class="srt-dl-icon">⬇️</span>
+              </a>
+            `).join('')}
+          </div>
+          <button class="btn btn-retranscribe" data-action="show-settings" data-recording-id="${recordingId}">
+            Re-transcribe
+          </button>
+        </div>`;
+    }
+
+    // ── Error ──
+    if (state.phase === 'error') {
+      return `
+        <div class="transcription-error">
+          <span class="error-msg">❌ ${state.message}</span>
+          <button class="btn btn-retranscribe" data-action="show-settings" data-recording-id="${recordingId}">
+            Try Again
+          </button>
+        </div>`;
+    }
+
+    return '';
+  }
+
+  _bindRecordingEvents(item, recordingId) {
+    item.querySelectorAll('[data-action]').forEach((el) => {
+      el.addEventListener('click', (e) => {
         e.preventDefault();
-        const recordingId = parseInt(link.dataset.recordingId);
-        const fileName = link.dataset.fileName;
-        this.downloadFile(recordingId, fileName);
+        this._handleRecordingAction(e.currentTarget, recordingId);
       });
     });
   }
 
-  downloadFile(recordingId, fileName) {
-    const recording = this.recordings.find(r => r.id === recordingId);
+  _handleRecordingAction(el, recordingId) {
+    const action = el.dataset.action;
+
+    if (action === 'download-audio') {
+      this.downloadAudioFile(recordingId, el.dataset.fileName);
+      return;
+    }
+
+    if (action === 'show-settings') {
+      // Don't allow opening settings on a different recording while one is running
+      if (this.activeTranscriptionId && this.activeTranscriptionId !== recordingId) return;
+      this.transcriptionStates.set(recordingId, { phase: 'settings' });
+      this._refreshTranscriptionPanel(recordingId);
+      return;
+    }
+
+    if (action === 'cancel') {
+      this.transcriptionStates.delete(recordingId);
+      this._refreshTranscriptionPanel(recordingId);
+      return;
+    }
+
+    if (action === 'start') {
+      const item = this.elements.recordingsList.querySelector(`.recording-item[data-id="${recordingId}"]`);
+      const modelId = item?.querySelector('.transcription-model')?.value ?? 'Xenova/whisper-base';
+      const language = item?.querySelector('.transcription-language')?.value ?? 'en';
+      this._runTranscription(recordingId, modelId, language);
+      return;
+    }
+
+    if (action === 'download-srt') {
+      this.downloadSRTFile(recordingId, el.dataset.srtName);
+      return;
+    }
+  }
+
+  _refreshTranscriptionPanel(recordingId) {
+    const item = this.elements.recordingsList.querySelector(`.recording-item[data-id="${recordingId}"]`);
+    if (!item) return;
+    const panel = item.querySelector('.transcription-panel');
+    if (!panel) return;
+    panel.innerHTML = this._transcriptionPanelHTML(recordingId);
+    this._bindRecordingEvents(item, recordingId);
+  }
+
+  // ─── Transcription ────────────────────────────────────────────────────────
+
+  async _runTranscription(recordingId, modelId, language) {
+    const recording = this.recordings.find((r) => r.id === recordingId);
     if (!recording) return;
 
-    const file = recording.files.find(f => f.name === fileName);
-    if (!file) return;
+    this.activeTranscriptionId = recordingId;
+    this.transcriptionStates.set(recordingId, { phase: 'starting' });
+    this._refreshTranscriptionPanel(recordingId);
 
-    const url = URL.createObjectURL(file.blob);
+    try {
+      const srtFiles = await this.transcriber.transcribeRecording(recording, modelId, language);
+      this.transcriptionStates.set(recordingId, { phase: 'done', srtFiles });
+    } catch (err) {
+      this.transcriptionStates.set(recordingId, { phase: 'error', message: err.message });
+    }
+
+    this.activeTranscriptionId = null;
+    this._refreshTranscriptionPanel(recordingId);
+  }
+
+  _onTranscriptionProgress(progress) {
+    if (!this.activeTranscriptionId) return;
+    this.transcriptionStates.set(this.activeTranscriptionId, { ...progress });
+    this._refreshTranscriptionPanel(this.activeTranscriptionId);
+  }
+
+  _onTranscriptionError(message) {
+    if (!this.activeTranscriptionId) return;
+    this.transcriptionStates.set(this.activeTranscriptionId, { phase: 'error', message });
+    this._refreshTranscriptionPanel(this.activeTranscriptionId);
+    this.activeTranscriptionId = null;
+  }
+
+  // ─── Downloads ────────────────────────────────────────────────────────────
+
+  downloadAudioFile(recordingId, fileName) {
+    const recording = this.recordings.find((r) => r.id === recordingId);
+    const file = recording?.files.find((f) => f.name === fileName);
+    if (!file) return;
+    this._triggerDownload(URL.createObjectURL(file.blob), file.name);
+  }
+
+  downloadSRTFile(recordingId, srtName) {
+    const state = this.transcriptionStates.get(recordingId);
+    const srt = state?.srtFiles?.find((f) => f.name === srtName);
+    if (!srt) return;
+    const blob = new Blob([srt.content], { type: 'text/srt' });
+    this._triggerDownload(URL.createObjectURL(blob), srt.name);
+  }
+
+  _triggerDownload(url, filename) {
     const a = document.createElement('a');
     a.href = url;
-    a.download = file.name;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-
-    // Clean up the URL after a delay
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  loadRecordings() {
-    // Recordings are stored in memory only for this session
-    // You could extend this to use IndexedDB for persistence
-    this.renderRecordings();
   }
 }
 
-// Initialize the app when DOM is ready
+// ─── Boot ──────────────────────────────────────────────────────────────────
+
 document.addEventListener('DOMContentLoaded', () => {
   window.listeningEar = new ListeningEar();
-});
-
-// Handle checkbox changes
-document.getElementById('record-mic')?.addEventListener('change', () => {
-  window.listeningEar?.updateRecordButton();
-});
-
-document.getElementById('record-system')?.addEventListener('change', () => {
-  window.listeningEar?.updateRecordButton();
 });

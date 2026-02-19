@@ -473,6 +473,220 @@ header h1 {
   margin: 1rem 0 0.5rem;
 }
 
+/* ── Transcription Panel ────────────────────────────────────────────────── */
+
+.transcription-panel {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.btn-transcribe {
+  background: linear-gradient(135deg, #6c63ff, #4ecdc4);
+  color: white;
+  border: none;
+  width: 100%;
+  font-size: 0.95rem;
+  padding: 0.65rem 1rem;
+}
+
+.btn-transcribe:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+/* Settings */
+.transcription-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 500px) {
+  .settings-row { grid-template-columns: 1fr; }
+}
+
+.setting-group label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.35rem;
+}
+
+.setting-group select {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.model-note {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.btn-start-transcription {
+  flex: 1;
+  background: linear-gradient(135deg, #6c63ff, #4ecdc4);
+  color: white;
+  border: none;
+  font-size: 0.9rem;
+  padding: 0.65rem 1rem;
+}
+
+.btn-start-transcription:hover { opacity: 0.9; }
+
+.btn-cancel {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 0.9rem;
+  padding: 0.65rem 1rem;
+}
+
+.btn-cancel:hover { background: rgba(255, 255, 255, 0.05); }
+
+/* Progress */
+.transcription-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.progress-label {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.progress-bar-track {
+  height: 6px;
+  background: var(--bg-primary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6c63ff, #4ecdc4);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progress-bar-fill.indeterminate {
+  width: 40% !important;
+  animation: indeterminate-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes indeterminate-slide {
+  0%   { transform: translateX(-150%); }
+  100% { transform: translateX(350%); }
+}
+
+.progress-pct {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+/* Done state */
+.transcription-done {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.done-label {
+  font-size: 0.9rem;
+  color: var(--success);
+  font-weight: 500;
+}
+
+.srt-downloads {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.5rem;
+}
+
+.srt-download {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: background 0.2s;
+  border: 1px solid rgba(108, 99, 255, 0.3);
+}
+
+.srt-download:hover { background: rgba(108, 99, 255, 0.15); }
+
+.srt-icon { font-size: 1.2rem; }
+
+.srt-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.srt-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.srt-filename {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.srt-dl-icon {
+  font-size: 1rem;
+  color: #6c63ff;
+}
+
+.btn-retranscribe {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 0.85rem;
+  padding: 0.45rem 0.75rem;
+  align-self: flex-start;
+}
+
+.btn-retranscribe:hover { background: rgba(255, 255, 255, 0.05); }
+
+/* Error state */
+.transcription-error {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.error-msg {
+  font-size: 0.9rem;
+  color: var(--accent);
+}
+
 /* Footer */
 footer {
   text-align: center;
