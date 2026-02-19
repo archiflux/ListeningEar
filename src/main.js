@@ -653,6 +653,14 @@ class ListeningEar {
     const recording = this.recordings.find((r) => r.id === recordingId);
     if (!recording) return;
 
+    // Check browser support before starting
+    const support = Transcriber.isSupported();
+    if (!support.supported) {
+      this.transcriptionStates.set(recordingId, { phase: 'error', message: support.reason });
+      this._refreshTranscriptionPanel(recordingId);
+      return;
+    }
+
     this.activeTranscriptionId = recordingId;
     this.transcriptionStates.set(recordingId, { phase: 'starting' });
     this._refreshTranscriptionPanel(recordingId);

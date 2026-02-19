@@ -2,6 +2,16 @@ import { audioBlobToFloat32Array } from './audio-utils.js';
 import { generateCombinedSRT, generateSingleSRT } from './srt-generator.js';
 
 /**
+ * Detect iOS Safari which has limited WASM/Worker support
+ */
+function isIOSSafari() {
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+  return isIOS && isSafari;
+}
+
+/**
  * Orchestrates audio decoding + Whisper transcription via a Web Worker,
  * then assembles the SRT output files.
  */
@@ -11,17 +21,54 @@ export class Transcriber {
     this.onProgress = onProgress;
     this.onError = onError;
     this._pendingResolve = null;
+    this._pendingReject = null;
+  }
+
+  /**
+   * Check if transcription is supported on this browser
+   */
+  static isSupported() {
+    // Check for basic requirements
+    if (typeof Worker === 'undefined') return { supported: false, reason: 'Web Workers not supported' };
+    if (typeof WebAssembly === 'undefined') return { supported: false, reason: 'WebAssembly not supported' };
+
+    // iOS Safari often crashes with large WASM
+    if (isIOSSafari()) {
+      return {
+        supported: false,
+        reason: 'iOS Safari has limited support for in-browser AI. Please use Chrome on desktop, or download the audio and transcribe using another tool.'
+      };
+    }
+
+    return { supported: true };
   }
 
   _initWorker() {
     if (this.worker) return;
 
-    this.worker = new Worker(
-      new URL('./transcription.worker.js', import.meta.url),
-      { type: 'module' }
-    );
+    try {
+      this.worker = new Worker(
+        new URL('./transcription.worker.js', import.meta.url),
+        { type: 'module' }
+      );
 
-    this.worker.addEventListener('message', (e) => this._handleMessage(e.data));
+      this.worker.addEventListener('message', (e) => this._handleMessage(e.data));
+
+      // Handle worker errors
+      this.worker.addEventListener('error', (e) => {
+        console.error('Worker error:', e);
+        const message = e.message || 'Transcription worker crashed. This browser may not support in-browser AI.';
+        this.onError(message);
+        if (this._pendingReject) {
+          this._pendingReject(new Error(message));
+          this._pendingReject = null;
+          this._pendingResolve = null;
+        }
+      });
+    } catch (err) {
+      console.error('Failed to create worker:', err);
+      throw new Error('Failed to start transcription. This browser may not support in-browser AI.');
+    }
   }
 
   _handleMessage(msg) {
@@ -54,7 +101,9 @@ export class Transcriber {
 
       case 'error':
         this.onError(msg.message);
-        if (this._pendingResolve) {
+        if (this._pendingReject) {
+          this._pendingReject(new Error(msg.message));
+          this._pendingReject = null;
           this._pendingResolve = null;
         }
         break;
@@ -68,6 +117,7 @@ export class Transcriber {
   async _transcribeBlob(blob, modelId, language, sourceLabel) {
     return new Promise(async (resolve, reject) => {
       this._pendingResolve = resolve;
+      this._pendingReject = reject;
 
       try {
         this.onProgress({ phase: 'decoding_audio', sourceLabel });
@@ -80,6 +130,7 @@ export class Transcriber {
         );
       } catch (err) {
         this._pendingResolve = null;
+        this._pendingReject = null;
         reject(err);
       }
     });
