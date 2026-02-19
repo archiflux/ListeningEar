@@ -283,8 +283,16 @@ class ListeningEar {
         if (--pending <= 0) { this.finalizeRecording(); resolve(); }
       };
 
-      if (this.micRecorder?.state !== 'inactive') { pending++; this.micRecorder.onstop = onStop; this.micRecorder.stop(); }
-      if (this.systemRecorder?.state !== 'inactive') { pending++; this.systemRecorder.onstop = onStop; this.systemRecorder.stop(); }
+      if (this.micRecorder && this.micRecorder.state !== 'inactive') {
+        pending++;
+        this.micRecorder.onstop = onStop;
+        this.micRecorder.stop();
+      }
+      if (this.systemRecorder && this.systemRecorder.state !== 'inactive') {
+        pending++;
+        this.systemRecorder.onstop = onStop;
+        this.systemRecorder.stop();
+      }
       if (pending === 0) { this.finalizeRecording(); resolve(); }
 
       this.isRecording = false;
